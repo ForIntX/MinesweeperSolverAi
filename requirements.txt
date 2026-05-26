@@ -1,0 +1,7 @@
+# Projenin Python bagimliliklari bu dosyada listelenecektir.
+selenium
+opencv-python
+numpy
+torch
+tensorboard
+matplotlib
