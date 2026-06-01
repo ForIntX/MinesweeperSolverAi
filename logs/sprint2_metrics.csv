@@ -1,0 +1,4 @@
+episode,steps,reward,avg_loss,epsilon,done
+1,40,-1.8,0.0,0.995,False
+2,40,5.9,0.051202,0.99,False
+3,40,-1.8,0.053968,0.9851,False
