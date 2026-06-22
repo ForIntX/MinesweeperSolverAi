@@ -1,18 +1,24 @@
-/venv
-/.agents
-/.codex
-/.env
-/.idea
-/.pytest_cache
-/.vscode
-/__pycache__
-/.venv
-/.mypy_cache
-/.pytest_cache
-/.vscode
-/agent/__pycache__
-/agent/q_network.py
-/agent/replay_buffer.py
-/agent/trainer.py
-/env
-/venv
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.venv/
+.env
+
+
+
+# Logs
+logs/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

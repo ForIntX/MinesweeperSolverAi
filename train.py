@@ -1,194 +1,262 @@
-import argparse
-import csv
-import random
-from pathlib import Path
+"""
+Eğitim scripti.
 
+Kullanım:
+    python train.py                  # 100k episode
+    python train.py --episodes 50000
+    python train.py --resume
+
+Çıktı:
+    checkpoints/best.pth
+    checkpoints/last.pth
+    logs/training_log.csv
+    logs/training_plots.png
+
+Hibrit Strateji:
+    Her adımda önce kural tabanlı çözücü devreye girer.
+    Çözücü güvenli hücre bulamazsa DQN karar verir.
+    Bu sayede ajan gerçekten belirsiz (guess) durumları öğrenir.
+"""
+
+import os, sys, csv, time, argparse
 import numpy as np
-import torch
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-from src.agent.dqn_agent import DQNAgent
-from src.env.minesweeper_env import MinesweeperEnv
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from env.minesweeper_env import MinesweeperEnv
+from agent.dqn_agent import DQNAgent
 
-
-STATE_MAP = {
-    "unsolved": -1.0,
-    "zero": 0.0,
-    "one": 1.0,
-    "two": 2.0,
-    "three": 3.0,
-    "four": 4.0,
-    "five": 5.0,
-    "six": 6.0,
-    "seven": 7.0,
-    "eight": 8.0,
-    "mine": -5.0,
-    "oof": -10.0,
-    "gg": 10.0,
-    "flag": -2.0,
+CFG = {
+    "width": 9, "height": 9, "n_mines": 10,
+    "episodes":     100_000,
+    "log_interval": 1_000,
+    "lr":           1e-4,
+    "gamma":        0.99,
+    "eps_start":    1.0,
+    "eps_end":      0.05,
+    "eps_decay":    40_000,
+    "batch":        64,
+    "target_update":2_000,
+    "memory":       50_000,
+    "ckpt_dir":     "checkpoints",
+    "log_dir":      "logs",
 }
 
 
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+def normalize(state: np.ndarray) -> np.ndarray:
+    """
+    -1 (kapalı) → -1.0   (maskeleme işareti)
+    -2 (bayrak) → -2.0   (kesin mayın)
+     0..8 (açık) →  0.0..1.0  (8'e böl)
+    """
+    out = state.astype(np.float32)
+    m = state >= 0
+    out[m] = state[m] / 8.0
+    return out
 
 
-def encode_state(board_2d):
-    flattened = []
-    for row in board_2d:
-        for cell in row:
-            flattened.append(STATE_MAP.get(cell, -1.0))
-    return torch.tensor([flattened], dtype=torch.float32)
+def evaluate(env, agent, n=300):
+    """Greedy politika ile n oyun oynar, kazanma oranını döndürür."""
+    saved = agent.episodes_done
+    agent.set_epsilon(0.0)
+    wins = 0
+    for _ in range(n):
+        s, done = env.reset(), False
+        while not done:
+            safe, flagged = env.rule_based_moves()
+            for f in flagged:
+                env.board[f] = env.FLAG
 
-
-def get_valid_actions(board_2d):
-    valid_actions = []
-    cols = len(board_2d[0])
-
-    for row_idx, row in enumerate(board_2d):
-        for col_idx, cell in enumerate(row):
-            if cell == "unsolved":
-                valid_actions.append(row_idx * cols + col_idx)
-
-    return valid_actions
-
-
-def action_to_coords(action_idx, cols):
-    y = action_idx // cols
-    x = action_idx % cols
-    return x, y
-
-
-def save_checkpoint(agent, checkpoint_path, rows, cols, episode):
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "episode": episode,
-            "rows": rows,
-            "cols": cols,
-            "policy_state_dict": agent.policy_net.state_dict(),
-            "target_state_dict": agent.target_net.state_dict(),
-            "optimizer_state_dict": agent.optimizer.state_dict(),
-            "epsilon": agent.epsilon,
-        },
-        checkpoint_path,
-    )
-
-
-def write_metrics(metrics_path, metrics):
-    metrics_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with metrics_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(
-            file,
-            fieldnames=["episode", "steps", "reward", "avg_loss", "epsilon", "done"],
-        )
-        writer.writeheader()
-        writer.writerows(metrics)
-
-
-def run_dqn_training(args):
-    print("Sprint 2: DQN egitimi basliyor...")
-    set_seed(args.seed)
-
-    rows = args.rows
-    cols = args.cols
-    total_cells = rows * cols
-    device = "cuda" if torch.cuda.is_available() and not args.cpu else "cpu"
-
-    env = MinesweeperEnv(templates_dir=args.templates_dir, rows=rows, cols=cols)
-    agent = DQNAgent(
-        input_dim=total_cells,
-        output_dim=total_cells,
-        device=device,
-        batch_size=args.batch_size,
-        lr=args.learning_rate,
-    )
-
-    metrics = []
-
-    try:
-        for episode in range(1, args.episodes + 1):
-            raw_state = env.reset()
-            state = encode_state(raw_state)
-            done = False
-            steps = 0
-            total_reward = 0.0
-            losses = []
-
-            while not done and steps < args.max_steps:
-                valid_actions = get_valid_actions(raw_state)
-                if not valid_actions:
-                    done = True
+            if safe:
+                action = safe[0]
+            else:
+                v = env.valid_actions()
+                if not v:
                     break
+                s = env.board.copy()
+                action = agent.select_action(normalize(s), v)
+            s, _, done, info = env.step(action)
+        if info.get("won"):
+            wins += 1
+    agent.episodes_done = saved
+    return wins / n
 
-                action_idx = agent.select_action(state, valid_actions)
-                next_raw_state, reward, done = env.step(action_to_coords(action_idx, cols))
-                next_state = encode_state(next_raw_state)
 
-                agent.memory.push(state, action_idx, reward, next_state, done)
-                loss = agent.optimize_model()
-                if loss is not None:
-                    losses.append(loss)
+def plot(log_path, out_path):
+    eps, wr, rw, ls = [], [], [], []
+    with open(log_path) as f:
+        for row in csv.DictReader(f):
+            eps.append(int(row["ep"]))
+            wr.append(float(row["win_rate"]) * 100)
+            rw.append(float(row["avg_reward"]))
+            ls.append(float(row["avg_loss"]))
+    
+    if not wr:
+        return
+        
+    fig, ax = plt.subplots(1, 3, figsize=(15, 4))
+    ax[0].plot(eps, wr,  "#2ecc71"); ax[0].set_title("Win Rate (%)"); ax[0].set_ylim(0, max(max(wr)+5, 10))
+    ax[1].plot(eps, rw,  "#3498db"); ax[1].set_title("Avg Reward");   ax[1].axhline(0, color="gray", ls="--")
+    ax[2].plot(eps, ls,  "#e74c3c"); ax[2].set_title("Avg Loss")
+    for a in ax: a.grid(alpha=.3)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=120)
+    plt.close()
 
-                state = next_state
-                raw_state = next_raw_state
-                total_reward += reward
-                steps += 1
 
-            agent.decay_epsilon()
-            if episode % args.target_update_freq == 0:
-                agent.update_target_net()
+def train(n_ep, resume=False):
+    os.makedirs(CFG["ckpt_dir"], exist_ok=True)
+    os.makedirs(CFG["log_dir"],  exist_ok=True)
 
-            avg_loss = sum(losses) / len(losses) if losses else 0.0
-            metrics.append(
-                {
-                    "episode": episode,
-                    "steps": steps,
-                    "reward": round(total_reward, 4),
-                    "avg_loss": round(avg_loss, 6),
-                    "epsilon": round(agent.epsilon, 4),
-                    "done": done,
-                }
-            )
+    env   = MinesweeperEnv(CFG["width"], CFG["height"], CFG["n_mines"])
+    agent = DQNAgent(
+        state_size      = env.n_cells,
+        action_size     = env.n_cells,
+        lr              = CFG["lr"],
+        gamma           = CFG["gamma"],
+        epsilon_start   = CFG["eps_start"],
+        epsilon_end     = CFG["eps_end"],
+        epsilon_decay   = CFG["eps_decay"],
+        batch_size      = CFG["batch"],
+        target_update   = CFG["target_update"],
+        memory_capacity = CFG["memory"],
+    )
+
+    last_ckpt = os.path.join(CFG["ckpt_dir"], "last.pth")
+    best_ckpt = os.path.join(CFG["ckpt_dir"], "best.pth")
+    if resume and os.path.exists(last_ckpt):
+        agent.load(last_ckpt)
+
+    log_path = os.path.join(CFG["log_dir"], "training_log.csv")
+    mode = "a" if (resume and os.path.exists(log_path)) else "w"
+    csvf = open(log_path, mode, newline="")
+    cw   = csv.writer(csvf)
+    if mode == "w":
+        cw.writerow(["ep", "win_rate", "avg_reward", "avg_loss", "epsilon"])
+
+    best_wr = 0.0
+    buf_r, buf_l, buf_w = [], [], 0
+    t0 = time.time()
+
+    print(f"\n{'='*55}")
+    print(f"  MINESWEEPER DQN  |  {CFG['width']}x{CFG['height']}  |  {CFG['n_mines']} mines")
+    print(f"  {n_ep:,} ep  |  device: {agent.device}")
+    print(f"  Hibrit: kural-tabanlı + DQN")
+    print(f"{'='*55}\n")
+
+    for ep in range(1, n_ep + 1):
+        env.reset()
+        done  = False
+        ep_r  = 0.0
+
+        pending_state = None
+        pending_action = None
+        pending_reward = 0.0
+
+        while not done:
+            safe, flagged = env.rule_based_moves()
+            
+            # Bulunan bayrakları board üzerine işle (DQN görsün ve bir daha tıklamasın)
+            for f in flagged:
+                env.board[f] = env.FLAG
+                
+            if safe:
+                for action in safe:
+                    if action in env.opened:
+                        continue
+                    _, r, done, info = env.step(action)
+                    ep_r += r
+                    
+                    # DQN daha önce bir hamle yaptıysa, rule-based'in kazandırdığı ödülü DQN'e atfet
+                    if pending_state is not None:
+                        pending_reward += r
+                        
+                    if done:
+                        break
+                        
+                if done and pending_state is not None:
+                    agent.remember(pending_state, pending_action, pending_reward, normalize(env.board.copy()), done)
+                    pending_state = None
+                    
+                    loss = agent.learn()
+                    if loss is not None:
+                        buf_l.append(loss)
+            else:
+                # Kural tabanlı tıkandı. Eğer beklemede bir DQN transition'ı varsa, ŞU AN tamamlandı.
+                if pending_state is not None:
+                    agent.remember(pending_state, pending_action, pending_reward, normalize(env.board.copy()), done)
+                    pending_state = None
+                    
+                    loss = agent.learn()
+                    if loss is not None:
+                        buf_l.append(loss)
+                
+                v = env.valid_actions()
+                if not v:
+                    break
+                
+                # DQN yeni hamlesini yapar
+                pending_state = normalize(env.board.copy())
+                action = agent.select_action(pending_state, v)
+                pending_action = action
+                
+                _, r, done, info = env.step(action)
+                ep_r += r
+                pending_reward = r
+                
+                if done:
+                    agent.remember(pending_state, pending_action, pending_reward, normalize(env.board.copy()), done)
+                    pending_state = None
+                    
+                    loss = agent.learn()
+                    if loss is not None:
+                        buf_l.append(loss)
+
+        agent.episode_done()
+        buf_r.append(ep_r)
+        if info.get("won"):
+            buf_w += 1
+
+        if ep % CFG["log_interval"] == 0:
+            wr   = buf_w / CFG["log_interval"]
+            avgr = float(np.mean(buf_r))
+            avgl = float(np.mean(buf_l)) if buf_l else 0.0
+            eps  = agent.epsilon
+            spd  = ep / (time.time() - t0)
 
             print(
-                "Episode "
-                f"{episode}/{args.episodes} | "
-                f"Adim: {steps} | "
-                f"Reward: {total_reward:.2f} | "
-                f"Epsilon: {agent.epsilon:.3f} | "
-                f"Ort. Loss: {avg_loss:.6f}"
+                f"ep {ep:7,} | win {wr*100:5.1f}% | "
+                f"r {avgr:+6.3f} | loss {avgl:.4f} | ε={eps:.3f} | {spd:.0f}ep/s"
             )
+            cw.writerow([ep, f"{wr:.4f}", f"{avgr:.4f}", f"{avgl:.6f}", f"{eps:.4f}"])
+            csvf.flush()
 
-    finally:
-        env.close()
+            if wr > best_wr:
+                best_wr = wr
+                agent.save(best_ckpt)
+                print(f"  ★ yeni en iyi: {wr*100:.1f}%")
 
-    write_metrics(Path(args.metrics_path), metrics)
-    save_checkpoint(agent, Path(args.checkpoint_path), rows, cols, args.episodes)
-    print(f"Metrikler kaydedildi: {args.metrics_path}")
-    print(f"Checkpoint kaydedildi: {args.checkpoint_path}")
+            buf_r, buf_l, buf_w = [], [], 0
 
+        if ep % 10_000 == 0:
+            agent.save(last_ckpt)
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Sprint 2 DQN Minesweeper egitimi")
-    parser.add_argument("--episodes", type=int, default=3)
-    parser.add_argument("--max-steps", type=int, default=40)
-    parser.add_argument("--rows", type=int, default=9)
-    parser.add_argument("--cols", type=int, default=9)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--target-update-freq", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--templates-dir", default="templates")
-    parser.add_argument("--metrics-path", default="logs/sprint2_metrics.csv")
-    parser.add_argument("--checkpoint-path", default="checkpoints/sprint2_dqn.pt")
-    parser.add_argument("--cpu", action="store_true")
-    return parser.parse_args()
+    csvf.close()
+    agent.save(last_ckpt)
+
+    print(f"\n{'='*55}")
+    final = evaluate(env, agent, 500)
+    print(f"  Final Win Rate (greedy, 500 oyun): {final*100:.1f}%")
+    print(f"  En iyi: {best_wr*100:.1f}%  |  Süre: {(time.time()-t0)/60:.0f}dk")
+    print(f"{'='*55}\n")
+
+    plot(log_path, os.path.join(CFG["log_dir"], "training_plots.png"))
 
 
 if __name__ == "__main__":
-    run_dqn_training(parse_args())
+    p = argparse.ArgumentParser()
+    p.add_argument("--episodes", type=int, default=CFG["episodes"])
+    p.add_argument("--resume",   action="store_true")
+    a = p.parse_args()
+    train(a.episodes, a.resume)

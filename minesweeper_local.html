@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Game #1 - Minesweeper Online</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<style>
+/* ========== RESET & BASE ========== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: #1a1a2e;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    color: #ccc;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.noselect { user-select: none; -webkit-user-select: none; }
+.clear { clear: both; }
+.pull-left { float: left; }
+.pull-right { float: right; }
+.hide { display: none !important; }
+
+/* ========== GAME WRAPPER ========== */
+#game {
+    width: 282px;
+    position: relative;
+}
+
+/* ========== 3D BORDER SYSTEM (Classic Windows HDD look) ========== */
+/* Outer raised border */
+.hdd_wrapper-border-left-top,
+.hdd_wrapper-border-right-top,
+.hdd_wrapper-border-t-left,
+.hdd_wrapper-border-t-right {
+    background: #c0c0c0;
+}
+.hdd_wrapper-border-hor {
+    background: #808080;
+    height: 16.5px;
+}
+.hdd_wrapper-border-vert {
+    background: #808080;
+    width: 18px;
+}
+
+/* ========== TOP AREA (Mine counter, Face, Timer) ========== */
+.hdd_top-area {
+    background: #c0c0c0;
+    padding: 0;
+    position: relative;
+}
+.top-area-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Number display panels */
+.hdd_numbers-panel {
+    background: #000;
+    border: 2px inset #808080;
+    position: relative;
+}
+
+/* 7-segment digit display */
+.top-area-num {
+    position: relative;
+    display: inline-block;
+}
+
+/* 7-segment LED digit display */
+.top-area-num {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.top-area-num .digit {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: #ff0000;
+    text-shadow: 0 0 6px rgba(255,0,0,0.5);
+}
+.hdd_top-area-num0 .digit::after { content: '0'; }
+.hdd_top-area-num1 .digit::after { content: '1'; }
+.hdd_top-area-num2 .digit::after { content: '2'; }
+.hdd_top-area-num3 .digit::after { content: '3'; }
+.hdd_top-area-num4 .digit::after { content: '4'; }
+.hdd_top-area-num5 .digit::after { content: '5'; }
+.hdd_top-area-num6 .digit::after { content: '6'; }
+.hdd_top-area-num7 .digit::after { content: '7'; }
+.hdd_top-area-num8 .digit::after { content: '8'; }
+.hdd_top-area-num9 .digit::after { content: '9'; }
+.hdd_top-area-num-minus .digit::after { content: '-'; }
+
+/* ========== FACE BUTTON ========== */
+.top-area-face {
+    cursor: pointer;
+    border: 2px outset #e0e0e0;
+    background: #c0c0c0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    line-height: 1;
+    border-radius: 2px;
+}
+.top-area-face:active {
+    border-style: inset;
+}
+
+/* ========== CELLS ========== */
+.cell {
+    width: 24px;
+    height: 24px;
+    float: left;
+    cursor: pointer;
+    position: relative;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 24px;
+}
+
+/* Closed cell - 3D raised look */
+.cell.hdd_closed {
+    background: #c0c0c0;
+    border-top: 2px solid #fff;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #808080;
+    border-right: 2px solid #808080;
+}
+.cell.hdd_closed:active {
+    border: 1px solid #808080;
+    background: #b0b0b0;
+}
+
+/* Opened cell - sunken look */
+.cell.hdd_opened {
+    background: #c0c0c0;
+    border: 1px solid #808080;
+    cursor: default;
+}
+
+/* Flag cell */
+.cell.hdd_flag {
+    background: #c0c0c0;
+    border-top: 2px solid #fff;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #808080;
+    border-right: 2px solid #808080;
+}
+.cell.hdd_flag::after {
+    content: '🚩';
+    font-size: 14px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Mine cell (game over - revealed) */
+.cell.hdd_mine {
+    background: #c0c0c0;
+    border: 1px solid #808080;
+    cursor: default;
+}
+.cell.hdd_mine::after {
+    content: '💣';
+    font-size: 13px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Death cell (the mine you clicked) */
+.cell.hdd_death {
+    background: #ff0000;
+    border: 1px solid #808080;
+    cursor: default;
+}
+.cell.hdd_death::after {
+    content: '💥';
+    font-size: 13px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Wrong flag (flag on non-mine cell, shown on game over) */
+.cell.hdd_wrong {
+    background: #c0c0c0;
+    border: 1px solid #808080;
+    cursor: default;
+}
+.cell.hdd_wrong::after {
+    content: '❌';
+    font-size: 13px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* ========== NUMBER COLORS (classic minesweeper) ========== */
+.cell.hdd_opened.type1 { color: #0000ff; }
+.cell.hdd_opened.type2 { color: #008000; }
+.cell.hdd_opened.type3 { color: #ff0000; }
+.cell.hdd_opened.type4 { color: #000080; }
+.cell.hdd_opened.type5 { color: #800000; }
+.cell.hdd_opened.type6 { color: #008080; }
+.cell.hdd_opened.type7 { color: #000000; }
+.cell.hdd_opened.type8 { color: #808080; }
+
+/* ========== AREA BLOCK (Board) ========== */
+#AreaBlock {
+    position: relative;
+}
+
+/* ========== DEBUG CONSOLE ========== */
+#debug-console {
+    margin-top: 20px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 12px;
+    width: 500px;
+    max-width: 90vw;
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #8b949e;
+}
+#debug-console .log-entry {
+    padding: 2px 0;
+    border-bottom: 1px solid #21262d;
+}
+#debug-console .log-win { color: #3fb950; }
+#debug-console .log-lose { color: #f85149; }
+#debug-console .log-action { color: #58a6ff; }
+#debug-console .log-info { color: #d29922; }
+</style>
+</head>
+<body>
+
+<!-- ===================== GAME AREA ===================== -->
+<div id="game" class="wrapper noselect zoomable theatre-mode skin_hdd" style="filter: brightness(100%); width: 252px;">
+    <!-- Top border row -->
+    <div class="zoomable" style="width: 252px; height: 16.5px; display: flex;">
+        <div id="game_top_left" class="hdd_wrapper-border-left-top wrapper-border-left-top zoomable" style="width: 18px; height: 16.5px;"></div>
+        <div class="hdd_wrapper-border-hor wrapper-border-hor zoomable" style="width: 216px; height: 16.5px;"></div>
+        <div id="game_top_right" class="hdd_wrapper-border-right-top wrapper-border-right-top zoomable" style="width: 18px; height: 16.5px;"></div>
+    </div>
+
+    <!-- Top area row (counter + face + timer) -->
+    <div class="zoomable" style="width: 252px; height: 48px; display: flex;">
+        <div class="hdd_wrapper-border-vert wrapper-border-vert zoomable" style="width: 18px; height: 48px;"></div>
+        <div id="top_area" class="hdd_top-area top-area zoomable" style="width: 216px; height: 48px; position: relative;">
+            <div class="zoomable" style="width: 216px; height: 4.5px;"></div>
+            <div style="position: relative; width: 216px; height: 39px;">
+                <!-- Mine Counter -->
+                <div class="hdd_numbers-panel numbers-panel pull-left zoomable" style="width: 61.5px; height: 37.5px; position: absolute; left: 4.5px; top: 0;">
+                    <div class="zoomable" style="width: 61.5px; height: 3px;"></div>
+                    <div class="zoomable" style="width: 61.5px; height: 31.5px;">
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_mines_100" class="hdd_top-area-num0 top-area-num pull-left zoomable" style="width: 16.5px; height: 31.5px;"></div>
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_mines_10" class="top-area-num pull-left zoomable hdd_top-area-num1" style="width: 16.5px; height: 31.5px;"></div>
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_mines_1" class="top-area-num pull-left zoomable hdd_top-area-num0" style="width: 16.5px; height: 31.5px;"></div>
+                    </div>
+                </div>
+
+                <!-- Timer -->
+                <div class="hdd_numbers-panel numbers-panel pull-right zoomable" style="width: 61.5px; height: 37.5px; position: absolute; right: 4.5px; top: 0;">
+                    <div class="zoomable" style="width: 61.5px; height: 3px;"></div>
+                    <div class="zoomable" style="width: 61.5px; height: 31.5px;">
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_time_100" class="top-area-num pull-left zoomable hdd_top-area-num0" style="width: 16.5px; height: 31.5px;"></div>
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_time_10" class="top-area-num pull-left zoomable hdd_top-area-num0" style="width: 16.5px; height: 31.5px;"></div>
+                        <div class="pull-left zoomable" style="width: 3px; height: 31.5px;"></div>
+                        <div id="top_area_time_1" class="top-area-num pull-left zoomable hdd_top-area-num0" style="width: 16.5px; height: 31.5px;"></div>
+                    </div>
+                </div>
+
+                <!-- Face Button -->
+                <div class="top-area-center">
+                    <div id="top_area_face" class="top-area-face zoomable hdd_top-area-face-unpressed" style="width: 39px; height: 39px;">😊</div>
+                </div>
+            </div>
+        </div>
+        <div class="hdd_wrapper-border-vert wrapper-border-vert zoomable" style="width: 18px; height: 48px;"></div>
+    </div>
+
+    <!-- Middle border row -->
+    <div class="zoomable" style="width: 252px; height: 16.5px; display: flex;">
+        <div class="hdd_wrapper-border-t-left wrapper-border-t-left zoomable" style="width: 18px; height: 16.5px;"></div>
+        <div class="hdd_wrapper-border-hor wrapper-border-hor zoomable" style="width: 216px; height: 16.5px;"></div>
+        <div class="hdd_wrapper-border-t-right wrapper-border-t-right zoomable" style="width: 18px; height: 16.5px;"></div>
+    </div>
+
+    <!-- Board area -->
+    <div class="zoomable" style="width: 252px; height: 216px; display: flex;">
+        <div class="hdd_wrapper-border-vert wrapper-border-vert zoomable" style="width: 18px; height: 216px;"></div>
+        <div id="AreaBlock" class="pull-left" style="width: 216px; height: 216px;">
+            <!-- Cells will be generated by JavaScript -->
+        </div>
+        <div class="hdd_wrapper-border-vert wrapper-border-vert zoomable" style="width: 18px; height: 216px;"></div>
+    </div>
+
+    <!-- Bottom border row -->
+    <div class="zoomable" style="width: 252px; height: 16.5px; display: flex;">
+        <div class="hdd_wrapper-border-left-bottom wrapper-border-left-bottom zoomable" style="width: 18px; height: 16.5px;"></div>
+        <div class="hdd_wrapper-border-hor wrapper-border-hor zoomable" style="width: 216px; height: 16.5px;"></div>
+        <div class="hdd_wrapper-border-right-bottom wrapper-border-right-bottom zoomable" style="width: 18px; height: 16.5px;"></div>
+    </div>
+</div>
+
+<!-- Hidden element for mines-count (SeleniumController compatibility) -->
+<span id="mines-count" style="display:none;">010</span>
+
+<!-- Debug Console -->
+<div id="debug-console"></div>
+
+<script>
+// ==================== MINESWEEPER GAME ENGINE ====================
+
+(function() {
+    'use strict';
+
+    // ========== CONFIGURATION ==========
+    const WIDTH = 9;
+    const HEIGHT = 9;
+    const N_MINES = 10;
+    const N_CELLS = WIDTH * HEIGHT;
+    const N_SAFE = N_CELLS - N_MINES;
+
+    // ========== STATE ==========
+    let board = [];        // 2D array: -1=mine, 0-8=adjacent count
+    let cellState = [];    // 2D array: 'closed', 'opened', 'flag'
+    let gameStarted = false;
+    let gameOver = false;
+    let gameWon = false;
+    let firstClick = true;
+    let minesPlaced = false;
+    let flagCount = 0;
+    let timerValue = 0;
+    let timerInterval = null;
+    let gameNumber = 1;
+
+    // ========== DOM REFS ==========
+    const gameDiv = document.getElementById('game');
+    const areaBlock = document.getElementById('AreaBlock');
+    const faceBtn = document.getElementById('top_area_face');
+    const mines100 = document.getElementById('top_area_mines_100');
+    const mines10 = document.getElementById('top_area_mines_10');
+    const mines1 = document.getElementById('top_area_mines_1');
+    const time100 = document.getElementById('top_area_time_100');
+    const time10 = document.getElementById('top_area_time_10');
+    const time1 = document.getElementById('top_area_time_1');
+    const minesCountSpan = document.getElementById('mines-count');
+    const debugConsole = document.getElementById('debug-console');
+
+    // ========== HELPER FUNCTIONS ==========
+    function getCellId(x, y) {
+        return 'cell_' + x + '_' + y;
+    }
+
+    function getCell(x, y) {
+        return document.getElementById(getCellId(x, y));
+    }
+
+    function getNeighbors(x, y) {
+        const neighbors = [];
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < WIDTH && ny >= 0 && ny < HEIGHT) {
+                    neighbors.push({x: nx, y: ny});
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    function logDebug(msg, cls) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry' + (cls ? ' ' + cls : '');
+        entry.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+        debugConsole.appendChild(entry);
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+    }
+
+    // ========== NUMBER DISPLAY (7-segment style) ==========
+    function setDigitElement(el, digit) {
+        // Remove all hdd_top-area-numN classes
+        for (let i = 0; i <= 9; i++) {
+            el.classList.remove('hdd_top-area-num' + i);
+        }
+        el.classList.remove('hdd_top-area-num-minus');
+        el.classList.add('hdd_top-area-num' + digit);
+        // Ensure inner .digit span exists
+        if (!el.querySelector('.digit')) {
+            const span = document.createElement('span');
+            span.className = 'digit';
+            el.appendChild(span);
+        }
+    }
+
+    function updateMinesDisplay() {
+        const remaining = N_MINES - flagCount;
+        const val = Math.max(-99, Math.min(999, remaining));
+        const abs = Math.abs(val);
+        const d100 = Math.floor(abs / 100) % 10;
+        const d10 = Math.floor(abs / 10) % 10;
+        const d1 = abs % 10;
+
+        if (val < 0) {
+            // Show minus sign in hundreds place
+            mines100.className = 'top-area-num pull-left zoomable hdd_top-area-num-minus';
+            if (!mines100.querySelector('.digit')) {
+                const span = document.createElement('span');
+                span.className = 'digit';
+                mines100.appendChild(span);
+            }
+            setDigitElement(mines10, d10);
+            setDigitElement(mines1, d1);
+        } else {
+            setDigitElement(mines100, d100);
+            setDigitElement(mines10, d10);
+            setDigitElement(mines1, d1);
+        }
+
+        // Update hidden mines-count element
+        minesCountSpan.textContent = String(remaining).padStart(3, '0');
+    }
+
+    function updateTimerDisplay() {
+        const val = Math.min(999, timerValue);
+        const d100 = Math.floor(val / 100) % 10;
+        const d10 = Math.floor(val / 10) % 10;
+        const d1 = val % 10;
+        setDigitElement(time100, d100);
+        setDigitElement(time10, d10);
+        setDigitElement(time1, d1);
+    }
+
+    function startTimer() {
+        if (timerInterval) return;
+        timerInterval = setInterval(function() {
+            timerValue++;
+            if (timerValue > 999) timerValue = 999;
+            updateTimerDisplay();
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+
+    function resetTimer() {
+        stopTimer();
+        timerValue = 0;
+        updateTimerDisplay();
+    }
+
+    // ========== FACE ==========
+    function setFace(state) {
+        faceBtn.classList.remove('hdd_top-area-face-unpressed', 'win', 'dead', 'lose', 'sad');
+        switch(state) {
+            case 'normal':
+                faceBtn.classList.add('hdd_top-area-face-unpressed');
+                faceBtn.textContent = '😊';
+                break;
+            case 'pressed':
+                faceBtn.textContent = '😮';
+                break;
+            case 'won':
+                faceBtn.classList.add('hdd_top-area-face-unpressed', 'win');
+                faceBtn.textContent = '😎';
+                break;
+            case 'dead':
+                faceBtn.classList.add('hdd_top-area-face-unpressed', 'dead');
+                faceBtn.textContent = '😵';
+                break;
+        }
+    }
+
+    // ========== BOARD GENERATION ==========
+    function generateCells() {
+        areaBlock.innerHTML = '';
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) {
+                if (x === 0 && y > 0) {
+                    const clearDiv = document.createElement('div');
+                    clearDiv.className = 'clear';
+                    areaBlock.appendChild(clearDiv);
+                }
+                const cell = document.createElement('div');
+                cell.id = getCellId(x, y);
+                cell.className = 'cell size24 hdd_closed';
+                cell.setAttribute('data-x', x);
+                cell.setAttribute('data-y', y);
+                areaBlock.appendChild(cell);
+            }
+        }
+    }
+
+    function placeMines(safeX, safeY) {
+        // Initialize board
+        board = [];
+        cellState = [];
+        for (let y = 0; y < HEIGHT; y++) {
+            board[y] = [];
+            cellState[y] = [];
+            for (let x = 0; x < WIDTH; x++) {
+                board[y][x] = 0;
+                cellState[y][x] = 'closed';
+            }
+        }
+
+        // Safe zone: first click cell and its neighbors
+        const safeSet = new Set();
+        safeSet.add(safeX + ',' + safeY);
+        const safeNeighbors = getNeighbors(safeX, safeY);
+        for (const n of safeNeighbors) {
+            safeSet.add(n.x + ',' + n.y);
+        }
+
+        // Available positions for mines
+        const available = [];
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) {
+                if (!safeSet.has(x + ',' + y)) {
+                    available.push({x: x, y: y});
+                }
+            }
+        }
+
+        // If not enough available spots, reduce safe zone
+        if (available.length < N_MINES) {
+            available.length = 0;
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    if (x !== safeX || y !== safeY) {
+                        available.push({x: x, y: y});
+                    }
+                }
+            }
+        }
+
+        // Place mines randomly
+        for (let i = available.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = available[i];
+            available[i] = available[j];
+            available[j] = temp;
+        }
+
+        for (let i = 0; i < N_MINES; i++) {
+            board[available[i].y][available[i].x] = -1;
+        }
+
+        // Calculate adjacent mine counts
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) {
+                if (board[y][x] === -1) continue;
+                let count = 0;
+                const neighbors = getNeighbors(x, y);
+                for (const n of neighbors) {
+                    if (board[n.y][n.x] === -1) count++;
+                }
+                board[y][x] = count;
+            }
+        }
+
+        minesPlaced = true;
+    }
+
+    // ========== GAME LOGIC ==========
+    function openCell(x, y) {
+        if (gameOver) return;
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
+        if (cellState[y][x] === 'opened' || cellState[y][x] === 'flag') return;
+
+        // First click safety
+        if (firstClick) {
+            firstClick = false;
+            gameStarted = true;
+            placeMines(x, y);
+            startTimer();
+            logDebug('Oyun basladi! Ilk hamle: (' + x + ',' + y + ')', 'log-info');
+        }
+
+        // Check mine
+        if (board[y][x] === -1) {
+            // Game over - hit a mine
+            cellState[y][x] = 'opened';
+            const cell = getCell(x, y);
+            cell.className = 'cell size24 hdd_death';
+            cell.textContent = '';
+            endGame(false, x, y);
+            return;
+        }
+
+        // Open cell (flood fill for zeros)
+        floodOpen(x, y);
+
+        // Check win
+        checkWin();
+    }
+
+    function floodOpen(x, y) {
+        const stack = [{x: x, y: y}];
+        while (stack.length > 0) {
+            const pos = stack.pop();
+            const cx = pos.x;
+            const cy = pos.y;
+
+            if (cx < 0 || cx >= WIDTH || cy < 0 || cy >= HEIGHT) continue;
+            if (cellState[cy][cx] !== 'closed') continue;
+            if (board[cy][cx] === -1) continue;
+
+            cellState[cy][cx] = 'opened';
+            const cell = getCell(cx, cy);
+            const val = board[cy][cx];
+            cell.className = 'cell size24 hdd_opened type' + val;
+            cell.textContent = val > 0 ? val : '';
+
+            // If zero, flood fill neighbors
+            if (val === 0) {
+                const neighbors = getNeighbors(cx, cy);
+                for (const n of neighbors) {
+                    if (cellState[n.y][n.x] === 'closed') {
+                        stack.push(n);
+                    }
+                }
+            }
+        }
+    }
+
+    function toggleFlag(x, y) {
+        if (gameOver) return;
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
+        if (cellState[y][x] === 'opened') return;
+
+        const cell = getCell(x, y);
+
+        if (cellState[y][x] === 'closed') {
+            cellState[y][x] = 'flag';
+            cell.className = 'cell size24 hdd_flag';
+            cell.textContent = '';
+            flagCount++;
+            logDebug('Bayrak kondu: (' + x + ',' + y + ')', 'log-action');
+        } else if (cellState[y][x] === 'flag') {
+            cellState[y][x] = 'closed';
+            cell.className = 'cell size24 hdd_closed';
+            cell.textContent = '';
+            flagCount--;
+            logDebug('Bayrak kaldirildi: (' + x + ',' + y + ')', 'log-action');
+        }
+
+        updateMinesDisplay();
+    }
+
+    function checkWin() {
+        let openedCount = 0;
+        for (let y = 0; y < HEIGHT; y++) {
+            for (let x = 0; x < WIDTH; x++) {
+                if (cellState[y][x] === 'opened') openedCount++;
+            }
+        }
+        if (openedCount >= N_SAFE) {
+            endGame(true);
+        }
+    }
+
+    function endGame(won, deathX, deathY) {
+        gameOver = true;
+        stopTimer();
+
+        if (won) {
+            gameWon = true;
+            setFace('won');
+            logDebug('OYUN KAZANILDI! ' + timerValue + ' saniyede', 'log-win');
+            // Auto-flag all remaining mines
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    if (board[y][x] === -1 && cellState[y][x] !== 'flag') {
+                        cellState[y][x] = 'flag';
+                        const cell = getCell(x, y);
+                        cell.className = 'cell size24 hdd_flag';
+                        cell.textContent = '';
+                        flagCount++;
+                    }
+                }
+            }
+            updateMinesDisplay();
+        } else {
+            setFace('dead');
+            logDebug('OYUN KAYBEDILDI! Mayina basti: (' + deathX + ',' + deathY + ')', 'log-lose');
+            // Reveal all mines
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    const cell = getCell(x, y);
+                    if (board[y][x] === -1 && cellState[y][x] !== 'flag') {
+                        if (x !== deathX || y !== deathY) {
+                            cell.className = 'cell size24 hdd_mine';
+                            cell.textContent = '';
+                        }
+                    }
+                    // Show wrong flags
+                    if (board[y][x] !== -1 && cellState[y][x] === 'flag') {
+                        cell.className = 'cell size24 hdd_wrong';
+                        cell.textContent = '';
+                    }
+                }
+            }
+        }
+
+        document.title = (won ? 'Won' : 'Lost') + ' - Minesweeper Online (Local)';
+    }
+
+    function newGame() {
+        stopTimer();
+        gameStarted = false;
+        gameOver = false;
+        gameWon = false;
+        firstClick = true;
+        minesPlaced = false;
+        flagCount = 0;
+        timerValue = 0;
+        board = [];
+        cellState = [];
+        gameNumber++;
+
+        for (let y = 0; y < HEIGHT; y++) {
+            board[y] = [];
+            cellState[y] = [];
+            for (let x = 0; x < WIDTH; x++) {
+                board[y][x] = 0;
+                cellState[y][x] = 'closed';
+            }
+        }
+
+        generateCells();
+        updateMinesDisplay();
+        updateTimerDisplay();
+        setFace('normal');
+        document.title = 'Game #' + gameNumber + ' - Minesweeper Online (Local)';
+        logDebug('Yeni oyun basladi (Game #' + gameNumber + ')', 'log-info');
+
+        // Reattach event listeners
+        attachCellEvents();
+    }
+
+    // ========== EVENT HANDLING ==========
+    function attachCellEvents() {
+        const cells = areaBlock.querySelectorAll('.cell');
+        for (const cell of cells) {
+            const x = parseInt(cell.getAttribute('data-x'));
+            const y = parseInt(cell.getAttribute('data-y'));
+
+            // Left click (pointerdown + mousedown for Selenium compat)
+            cell.addEventListener('pointerdown', function(e) {
+                if (e.button === 0 && !gameOver && cellState[y][x] === 'closed') {
+                    setFace('pressed');
+                }
+            });
+
+            cell.addEventListener('mousedown', function(e) {
+                if (e.button === 0 && !gameOver && cellState[y][x] === 'closed') {
+                    setFace('pressed');
+                }
+            });
+
+            cell.addEventListener('click', function(e) {
+                if (e.button === 0) {
+                    openCell(x, y);
+                }
+            });
+
+            // Right click (flag)
+            cell.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                toggleFlag(x, y);
+            });
+
+            // Mouse up - restore face if still playing
+            cell.addEventListener('pointerup', function(e) {
+                if (!gameOver) {
+                    setFace('normal');
+                }
+            });
+            cell.addEventListener('mouseup', function(e) {
+                if (!gameOver) {
+                    setFace('normal');
+                }
+            });
+        }
+    }
+
+    // Face button - new game
+    faceBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        newGame();
+    });
+    faceBtn.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    // Prevent context menu on game area
+    gameDiv.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+    });
+
+    // ========== INITIALIZATION ==========
+    function init() {
+        generateCells();
+        updateMinesDisplay();
+        updateTimerDisplay();
+        setFace('normal');
+        attachCellEvents();
+        document.title = 'Game #1 - Minesweeper Online (Local)';
+        logDebug('Minesweeper Local baslatildi (Beginner: ' + WIDTH + 'x' + HEIGHT + ', ' + N_MINES + ' mayin)', 'log-info');
+        logDebug('SeleniumController uyumlu DOM yapisi aktif.', 'log-info');
+    }
+
+    init();
+
+})();
+</script>
+
+</body>
+</html>

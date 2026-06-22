@@ -1,7 +1,23 @@
-# Projenin Python bagimliliklari bu dosyada listelenecektir.
-selenium
-opencv-python
-numpy
-torch
-tensorboard
-matplotlib
+# Minesweeper Solver AI — Gereksinimler
+# =======================================
+# Kurulum: pip install -r requirements.txt
+
+# Derin öğrenme (GPU varsa otomatik CUDA kullanır)
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Sayısal işlemler
+numpy>=1.24.0
+
+# Görüntü işleme (web arayüzü için)
+opencv-python>=4.8.0
+
+# Tarayıcı otomasyonu
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+
+# Grafik görselleştirme
+matplotlib>=3.7.0
+
+# Görüntü kırpma/işleme (template çıkarımı için)
+Pillow>=10.0.0
